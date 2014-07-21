@@ -19,7 +19,7 @@ class TenyksService(object):
     direct_only = False
 
     def __init__(self, name):
-        self.channels = [settings.BROADCAST_TO_SERVICES_CHANNEL]
+        self.channels = [settings.BROADCAST_SERVICE_CHANNEL]
         self.name = name.lower().replace(' ', '')
         if self.irc_message_filters:
             self.re_irc_message_filters = {}
@@ -85,7 +85,7 @@ class TenyksService(object):
 
     def send(self, message, data=None):
         r = redis.Redis(**settings.REDIS_CONNECTION)
-        broadcast_channel = settings.BROADCAST_TO_ROBOT_CHANNEL
+        broadcast_channel = settings.BROADCAST_ROBOT_CHANNEL
         if data:
             to_publish = json.dumps({
                 'command': data['command'],

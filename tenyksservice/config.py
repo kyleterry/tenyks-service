@@ -9,7 +9,7 @@ from jinja2 import Template
 from tenyks.module_loader import make_module_from_file
 
 
-CLIENT_ROOT = abspath(dirname(__file__))
+SERVICE_ROOT = abspath(dirname(__file__))
 
 
 class NotConfigured(Exception):
@@ -60,27 +60,27 @@ class Settings(object):
 
 settings = Settings()
 
-def collect_settings(settings_path=None, client_name=None):
+def collect_settings(settings_path=None, service_name=None):
     errors = []
     intrl_settings = None
     if not len(sys.argv) > 1:
         message = """
 You need to provide a settings module.
 
-Use `tcmkconfig clientname > /path/to/settings.py`
-        """.format(pr=CLIENT_ROOT)
+Use `tcmkconfig servicename > /path/to/settings.py`
+        """.format(pr=SERVICE_ROOT)
         raise NotConfigured(message)
     intrl_settings = make_module_from_file('settings', sys.argv[1])
 
-    if client_name and not getattr(settings, 'CLIENT_NAME', None):
-        setattr(settings, 'CLIENT_NAME', client_name)
+    if service_name and not getattr(settings, 'SERVICE_NAME', None):
+        setattr(settings, 'SERVICE_NAME', service_name)
 
     for sett in filter(lambda x: not x.startswith('__'), dir(intrl_settings)):
         setattr(settings, sett, getattr(intrl_settings, sett))
 
     if not hasattr(intrl_settings, 'WORKING_DIR'):
         WORKING_DIR = getattr(settings, 'WORKING_DIRECTORY_PATH',
-                join(os.environ['HOME'], '.config', settings.CLIENT_NAME))
+                join(os.environ['HOME'], '.config', settings.SERVICE_NAME))
         DATA_WORKING_DIR = join(WORKING_DIR, 'data')
         try:
             os.makedirs(DATA_WORKING_DIR)
@@ -132,7 +132,7 @@ Use `tcmkconfig clientname > /path/to/settings.py`
             },
             'handlers': {},
             'loggers': {
-                settings.CLIENT_NAME: {
+                settings.SERVICE_NAME: {
                     'handlers': [settings.LOG_TO],
                     'level': settings.LOG_LEVEL,
                     'propagate': True
@@ -170,11 +170,11 @@ Use `tcmkconfig clientname > /path/to/settings.py`
 
 
 def make_config():
-    usage = 'tcmkconfig clientname'
+    usage = 'tcmkconfig servicename'
     if len(sys.argv) < 2:
         print(usage)
         exit(1)
-    with open(join(CLIENT_ROOT, 'settings.py.dist'), 'r') as f:
+    with open(join(SERVICE_ROOT, 'settings.py.dist'), 'r') as f:
         settings_template = f.read()
     template = Template(settings_template)
-    print(template.render({'client_name': sys.argv[1]}))
+    print(template.render({'service_name': sys.argv[1]}))
