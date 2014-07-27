@@ -1,4 +1,5 @@
 import os
+import errno
 from os.path import abspath, join, dirname
 import sys
 import logging.config
@@ -84,8 +85,11 @@ Use `tcmkconfig servicename > /path/to/settings.py`
         DATA_WORKING_DIR = join(WORKING_DIR, 'data')
         try:
             os.makedirs(DATA_WORKING_DIR)
-        except:
-            errors.append('Could not create {0}'.format(DATA_WORKING_DIR))
+        except OSError as exc:
+            if exc.errno == errno.EEXIST and os.path.isdir(DATA_WORKING_DIR):
+                pass
+            else:
+                errors.append('Could not create {0}'.format(DATA_WORKING_DIR))
 
         setattr(settings, 'WORKING_DIR', WORKING_DIR)
         setattr(settings, 'DATA_WORKING_DIR', DATA_WORKING_DIR)
@@ -103,7 +107,7 @@ Use `tcmkconfig servicename > /path/to/settings.py`
     if hasattr(settings, 'LOG_TO'):
         available_handlers = ('console', 'file', 'syslog')
         if settings.LOG_TO not in available_handlers:
-            raise ConfigurationError('LOG_TO must be one of {handlers}'.format(
+            raise Exception('LOG_TO must be one of {handlers}'.format(
                 handlers=available_handlers))
     else:
         setattr(settings, 'LOG_TO', 'console')

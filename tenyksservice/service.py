@@ -17,6 +17,7 @@ class TenyksService(object):
     irc_message_filters = {}
     name = None
     direct_only = False
+    version = '0.0'
 
     def __init__(self, name):
         self.channels = [settings.BROADCAST_SERVICE_CHANNEL]
