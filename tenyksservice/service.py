@@ -60,6 +60,9 @@ class TenyksService(object):
                         raise ValueError
                     if self.direct_only and not data.get('direct', None):
                         continue
+                    if data["command"] == "PING":
+                        gevent.spawn(self._respond_to_ping, data)
+                        continue
                     if self.irc_message_filters and 'payload' in data:
                         name, match = self.search_for_match(data['payload'])
                         ignore = (hasattr(self, 'pass_on_non_match')
@@ -89,6 +92,11 @@ class TenyksService(object):
     def handle(self, data, match, filter_name):
         raise NotImplementedError('`handle` needs to be implemented on all '
                                   'TenyksService subclasses.')
+
+    def _respond_to_ping(self, data):
+        data["command"] = "PONG"
+        data["connection"] = ""
+        self.send("", data)
 
     def send(self, message, data=None):
         r = redis.Redis(**settings.REDIS_CONNECTION)
