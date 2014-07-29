@@ -23,10 +23,11 @@ class TenyksService(object):
     def __init__(self, name):
         self.channels = [settings.BROADCAST_SERVICE_CHANNEL]
         self.name = name.lower().replace(' ', '')
+        self.logger = logging.getLogger(self.name)
         if self.irc_message_filters:
             self.re_irc_message_filters = {}
             for name, regexes in self.irc_message_filters.iteritems():
-                if not name in self.re_irc_message_filters:
+                if name not in self.re_irc_message_filters:
                     self.re_irc_message_filters[name] = []
                 if isinstance(regexes, basestring):
                     regexes = [regexes]
@@ -38,7 +39,21 @@ class TenyksService(object):
                         self.re_irc_message_filters[name].append(regex)
         if hasattr(self, 'recurring'):
             gevent.spawn(self.run_recurring)
-        self.logger = logging.getLogger(self.name)
+        self._register()
+
+    def _register(self):
+        self.logger.debug("Registering with bot")
+        data = {
+            "command": "REGISTER",
+            "payload": "",
+            "target": "",
+            "connection": "",
+            "meta": {
+                "name": self.name,
+                "version": self.version
+            }
+        }
+        self.send("", data)
 
     def run_recurring(self):
         self.recurring()
@@ -61,6 +76,7 @@ class TenyksService(object):
                     if self.direct_only and not data.get('direct', None):
                         continue
                     if data["command"] == "PING":
+                        self.logger.debug("Got ping message")
                         gevent.spawn(self._respond_to_ping, data)
                         continue
                     if self.irc_message_filters and 'payload' in data:
@@ -94,6 +110,7 @@ class TenyksService(object):
                                   'TenyksService subclasses.')
 
     def _respond_to_ping(self, data):
+        self.logger.debug("Responding to PING")
         data["command"] = "PONG"
         data["connection"] = ""
         self.send("", data)

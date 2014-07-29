@@ -1,5 +1,5 @@
 DEBUG = True
-SERVICE_NAME = ''
+SERVICE_NAME = 'hello'
 SERVICE_VERSION = '0.1.0'
 
 ##############################################################################
