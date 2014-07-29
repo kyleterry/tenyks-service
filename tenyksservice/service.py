@@ -18,6 +18,7 @@ class TenyksService(object):
     name = None
     direct_only = False
     version = '0.0'
+    required_data_fields = ["command", "payload"]
 
     def __init__(self, name):
         self.channels = [settings.BROADCAST_SERVICE_CHANNEL]
@@ -44,6 +45,9 @@ class TenyksService(object):
         recurring_delay = getattr(self, 'recurring_delay', 30)
         gevent.spawn_later(recurring_delay, self.run_recurring)
 
+    def data_is_valid(self, data):
+        return all(map(lambda x: x in data.keys(), self.required_data_fields))
+
     def run(self):
         r = redis.Redis(**settings.REDIS_CONNECTION)
         pubsub = r.pubsub()
@@ -52,6 +56,8 @@ class TenyksService(object):
             try:
                 if raw_redis_message['data'] != 1L:
                     data = json.loads(raw_redis_message['data'])
+                    if not self.data_is_valid(data):
+                        raise ValueError
                     if self.direct_only and not data.get('direct', None):
                         continue
                     if self.irc_message_filters and 'payload' in data:
