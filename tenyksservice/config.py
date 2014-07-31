@@ -1,6 +1,7 @@
 import os
 import errno
 from os.path import abspath, join, dirname
+import uuid
 import sys
 import logging.config
 from logging.handlers import SysLogHandler
@@ -181,4 +182,4 @@ def make_config():
     with open(join(SERVICE_ROOT, 'settings.py.dist'), 'r') as f:
         settings_template = f.read()
     template = Template(settings_template)
-    print(template.render({'service_name': sys.argv[1]}))
+    print(template.render({'service_name': sys.argv[1], "uuid": uuid.uuid4()}))
