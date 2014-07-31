@@ -20,8 +20,9 @@ class TenyksService(object):
     version = '0.0'
     required_data_fields = ["command", "payload"]
 
-    def __init__(self, name):
+    def __init__(self, name, settings):
         self.channels = [settings.BROADCAST_SERVICE_CHANNEL]
+        self.settings = settings
         self.name = name.lower().replace(' ', '')
         self.logger = logging.getLogger(self.name)
         if self.irc_message_filters:
@@ -50,7 +51,26 @@ class TenyksService(object):
             "connection": "",
             "meta": {
                 "name": self.name,
-                "version": self.version
+                "version": self.version,
+                "UUID": self.settings.SERVICE_UUID
+            }
+        }
+        self.send("", data)
+
+    def hangup(self):
+        self._hangup()
+
+    def _hangup(self):
+        self.logger.debug("Hanging up with bot")
+        data = {
+            "command": "BYE",
+            "payload": "",
+            "target": "",
+            "connection": "",
+            "meta": {
+                "name": self.name,
+                "version": self.version,
+                "UUID": self.settings.SERVICE_UUID
             }
         }
         self.send("", data)
@@ -134,11 +154,12 @@ class TenyksService(object):
 
 def run_service(service_class):
     errors = collect_settings()
-    service_instance = service_class(settings.SERVICE_NAME)
+    service_instance = service_class(settings.SERVICE_NAME, settings)
     for error in errors:
         service_instance.logger.error(error)
     try:
         service_instance.run()
     except KeyboardInterrupt:
+        service_instance.hangup()
         logger = logging.getLogger(service_instance.name)
         logger.info('exiting')
