@@ -26,6 +26,8 @@ Git `git clone https://github.com/kyleterry/tenyks-service; cd tenyks-service;
 This will also generate a UUID for your service. Please don't lose this or you
 will have to keep purging all the old services registered with Tenyks.
 
+Then, I would set `SERVICE_DESCRIPTION` to something.
+
 ## Usage
 
 See [examples](./examples/hello-service).
