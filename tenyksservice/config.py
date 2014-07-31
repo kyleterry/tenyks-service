@@ -7,7 +7,7 @@ from logging.handlers import SysLogHandler
 
 from jinja2 import Template
 
-from tenyks.module_loader import make_module_from_file
+from tenyksservice.module_loader import make_module_from_file
 
 
 SERVICE_ROOT = abspath(dirname(__file__))
