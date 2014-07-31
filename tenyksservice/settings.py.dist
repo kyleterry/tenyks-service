@@ -2,6 +2,7 @@ DEBUG = True
 SERVICE_NAME = '{{ service_name }}'
 SERVICE_VERSION = '0.1.0'
 SERVICE_UUID = '{{ uuid }}'
+SERVICE_DESCRIPTION = 'I hear whispers'
 
 ##############################################################################
 # The following setting defines a dictionary containing Redis connection

@@ -2,6 +2,7 @@ DEBUG = True
 SERVICE_NAME = 'hello'
 SERVICE_VERSION = '0.1.1'
 SERVICE_UUID = '273b62ad-a99d-48be-8d80-ccc55ef688b4'
+SERVICE_DESCRIPTION = 'Hello service will let you greet Tenyks'
 
 ##############################################################################
 # The following setting defines a dictionary containing Redis connection

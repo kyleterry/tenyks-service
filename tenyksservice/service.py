@@ -52,7 +52,8 @@ class TenyksService(object):
             "meta": {
                 "name": self.name,
                 "version": self.version,
-                "UUID": self.settings.SERVICE_UUID
+                "UUID": self.settings.SERVICE_UUID,
+                "description": self.settings.SERVICE_DESCRIPTION
             }
         }
         self.send("", data)
@@ -70,7 +71,8 @@ class TenyksService(object):
             "meta": {
                 "name": self.name,
                 "version": self.version,
-                "UUID": self.settings.SERVICE_UUID
+                "UUID": self.settings.SERVICE_UUID,
+                "description": self.settings.SERVICE_DESCRIPTION
             }
         }
         self.send("", data)
