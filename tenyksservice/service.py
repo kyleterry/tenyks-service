@@ -95,11 +95,15 @@ class TenyksService(object):
                     data = json.loads(raw_redis_message['data'])
                     if not self.data_is_valid(data):
                         raise ValueError
-                    if self.direct_only and not data.get('direct', None):
-                        continue
                     if data["command"] == "PING":
-                        self.logger.debug("Got ping message")
+                        self.logger.debug("Got PING message; PONGing...")
                         gevent.spawn(self._respond_to_ping, data)
+                        continue
+                    if data["command"] == "HELLO":
+                        self.logger.debug("Got HELLO message; registering...")
+                        self._register()
+                        continue
+                    if self.direct_only and not data.get('direct', None):
                         continue
                     if self.irc_message_filters and 'payload' in data:
                         name, match = self.search_for_match(data['payload'])
@@ -148,7 +152,9 @@ class TenyksService(object):
                 'connection': data['connection'],
                 'meta': {
                     'name': self.name,
-                    'version': self.version or 0.0
+                    'version': self.version or 0.0,
+                    "UUID": self.settings.SERVICE_UUID,
+                    "description": self.settings.SERVICE_DESCRIPTION
                 }
             })
         r.publish(broadcast_channel, to_publish)
