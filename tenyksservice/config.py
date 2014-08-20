@@ -69,7 +69,7 @@ def collect_settings(settings_path=None, service_name=None):
         message = """
 You need to provide a settings module.
 
-Use `tcmkconfig servicename > /path/to/settings.py`
+Use `tenyks-service-mkconfig servicename > /path/to/settings.py`
         """.format(pr=SERVICE_ROOT)
         raise NotConfigured(message)
     intrl_settings = make_module_from_file('settings', sys.argv[1])
@@ -175,7 +175,7 @@ Use `tcmkconfig servicename > /path/to/settings.py`
 
 
 def make_config():
-    usage = 'tcmkconfig servicename'
+    usage = 'tenyks-service-mkconfig servicename'
     if len(sys.argv) < 2:
         print(usage)
         exit(1)
