@@ -153,8 +153,8 @@ class TenyksService(object):
                 'meta': {
                     'name': self.name,
                     'version': self.version or 0.0,
-                    "UUID": self.settings.SERVICE_UUID,
-                    "description": self.settings.SERVICE_DESCRIPTION
+                    'UUID': self.settings.SERVICE_UUID,
+                    'description': self.settings.SERVICE_DESCRIPTION
                 }
             })
         r.publish(broadcast_channel, to_publish)
