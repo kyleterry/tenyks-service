@@ -26,18 +26,7 @@ class TenyksService(object):
         self.name = name.lower().replace(' ', '')
         self.logger = logging.getLogger(self.name)
         if self.irc_message_filters:
-            self.re_irc_message_filters = {}
-            for name, regexes in self.irc_message_filters.iteritems():
-                if name not in self.re_irc_message_filters:
-                    self.re_irc_message_filters[name] = []
-                if isinstance(regexes, basestring):
-                    regexes = [regexes]
-                for regex in regexes:
-                    if isinstance(regex, str) or isinstance(regex, unicode):
-                        self.re_irc_message_filters[name].append(
-                            re.compile(regex).match)
-                    else:
-                        self.re_irc_message_filters[name].append(regex)
+            map(lambda f: f._compile(), self.irc_message_filters.values())
         if hasattr(self, 'recurring'):
             gevent.spawn(self.run_recurring)
         self._register()
@@ -117,11 +106,10 @@ class TenyksService(object):
                 self.logger.info('Invalid JSON. Ignoring message.')
 
     def search_for_match(self, message):
-        for name, regexes in self.re_irc_message_filters.iteritems():
-            for regex in regexes:
-                match = regex(message)
-                if match:
-                    return name, match
+        for name, filter_chain in self.irc_message_filters.iteritems():
+            match = filter_chain.attempt_match(message)
+            if match:
+                return name, match
         return None, None
 
     def delegate_to_handle_method(self, data, match, name):
@@ -158,6 +146,31 @@ class TenyksService(object):
                 }
             })
         r.publish(broadcast_channel, to_publish)
+
+
+class FilterChain(object):
+
+    def __init__(self, filters, direct_only=False):
+        self.filters = filters
+        self.direct_only = direct_only
+        self.compiled_filters = []
+
+    def _compile_filters(self):
+        if self.filters:
+            for f in self.filters:
+                if isinstance(f, str) or isinstance(f, unicode):
+                    self.compiled_filters.append(
+                        re.compile(f).match)
+                else:
+                    self.compiled_filters.append(f)  # already compiled filters
+
+    def attempt_match(self, message):
+        # tried to match message and returns the first one found or None
+        for f in self.compiled_filters:
+            match = f(message)
+            if match:
+                return match
+        return None
 
 
 def run_service(service_class):
