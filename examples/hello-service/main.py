@@ -1,16 +1,20 @@
-from tenyksservice import TenyksService, run_service
+from tenyksservice import TenyksService, run_service, FilterChain
 
 
 class Hello(TenyksService):
-    direct_only = True
     irc_message_filters = {
-        'hello': [r"^(?i)(hi|hello|sup|hey), I'm (?P<name>(.*))$"]
+        'hello': FilterChain([r"^(?i)(hi|hello|sup|hey), I'm (?P<name>(.*))$"],
+                             direct_only=True),
+        'no_direct': FilterChain([r'^non direct match$', ], direct_only=False)
     }
 
     def handle_hello(self, data, match):
         name = match.groupdict()['name']
         self.logger.debug('Saying hello to {name}'.format(name=name))
         self.send('How are you {name}?!'.format(name=name), data)
+
+    def handle_no_direct(self, data, match):
+        self.send('Handled non-direct message', data)
 
 
 def main():

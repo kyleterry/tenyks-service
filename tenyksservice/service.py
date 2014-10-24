@@ -16,7 +16,6 @@ class TenyksService(object):
 
     irc_message_filters = {}
     name = None
-    direct_only = False
     version = '0.0'
     required_data_fields = ["command", "payload"]
 
@@ -26,7 +25,8 @@ class TenyksService(object):
         self.name = name.lower().replace(' ', '')
         self.logger = logging.getLogger(self.name)
         if self.irc_message_filters:
-            map(lambda f: f._compile(), self.irc_message_filters.values())
+            map(lambda f: f._compile_filters(),
+                self.irc_message_filters.values())
         if hasattr(self, 'recurring'):
             gevent.spawn(self.run_recurring)
         self._register()
@@ -92,10 +92,8 @@ class TenyksService(object):
                         self.logger.debug("Got HELLO message; registering...")
                         self._register()
                         continue
-                    if self.direct_only and not data.get('direct', None):
-                        continue
                     if self.irc_message_filters and 'payload' in data:
-                        name, match = self.search_for_match(data['payload'])
+                        name, match = self.search_for_match(data)
                         ignore = (hasattr(self, 'pass_on_non_match')
                                   and self.pass_on_non_match)
                         if match or ignore:
@@ -105,9 +103,11 @@ class TenyksService(object):
             except ValueError:
                 self.logger.info('Invalid JSON. Ignoring message.')
 
-    def search_for_match(self, message):
+    def search_for_match(self, data):
         for name, filter_chain in self.irc_message_filters.iteritems():
-            match = filter_chain.attempt_match(message)
+            if filter_chain.direct_only and not data.get('direct', None):
+                continue
+            match = filter_chain.attempt_match(data['payload'])
             if match:
                 return name, match
         return None, None
