@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from setuptools import setup
 
-version = '1.5'
+version = '1.6'
 
 packages = [
     'tenyksservice',
