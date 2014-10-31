@@ -45,7 +45,7 @@ class TenyksService(object):
                 "description": self.settings.SERVICE_DESCRIPTION
             }
         }
-        self.send("", data)
+        self.send('', data)
 
     def hangup(self):
         self._hangup()
@@ -64,7 +64,16 @@ class TenyksService(object):
                 "description": self.settings.SERVICE_DESCRIPTION
             }
         }
-        self.send("", data)
+        self.send('', data)
+
+    def _help(self, data):
+        self.logger.debug("Sending help!")
+        data['target'] = data['nick']
+        if hasattr(self, "help_text"):
+            for line in self.help_text.split('\n'):
+                self.send(line, data)
+        else:
+            self.send('No help.', data)
 
     def run_recurring(self):
         self.recurring()
@@ -93,6 +102,9 @@ class TenyksService(object):
                         self._register()
                         continue
                     if self.irc_message_filters and 'payload' in data:
+                        if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
+                            self._help(data)
+                            continue
                         name, match = self.search_for_match(data)
                         ignore = (hasattr(self, 'pass_on_non_match')
                                   and self.pass_on_non_match)
