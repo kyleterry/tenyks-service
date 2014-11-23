@@ -5,7 +5,8 @@ class Hello(TenyksService):
     irc_message_filters = {
         'hello': FilterChain([r"^(?i)(hi|hello|sup|hey), I'm (?P<name>(.*))$"],
                              direct_only=True),
-        'no_direct': FilterChain([r'^non direct match$', ], direct_only=False)
+        'no_direct': FilterChain([r'^non direct match$', ], direct_only=False),
+        'private': FilterChain([r'^this is private$', ], private_only=True),
     }
 
     def handle_hello(self, data, match):
@@ -15,6 +16,9 @@ class Hello(TenyksService):
 
     def handle_no_direct(self, data, match):
         self.send('Handled non-direct message', data)
+
+    def handle_private(self, data, match):
+        self.send('nice talking with you, {}'.format(data['nick']), data)
 
 
 def main():

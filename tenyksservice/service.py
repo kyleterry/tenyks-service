@@ -8,6 +8,7 @@ import gevent
 import redis
 
 import logging
+import warnings
 
 from .config import settings, collect_settings
 
@@ -117,7 +118,9 @@ class TenyksService(object):
 
     def search_for_match(self, data):
         for name, filter_chain in self.irc_message_filters.iteritems():
-            if filter_chain.direct_only and not data.get('direct', None):
+            if filter_chain.direct_only and not data.get('direct', False):
+                continue
+            if filter_chain.private_only and data.get('from_channel', True):
                 continue
             match = filter_chain.attempt_match(data['payload'])
             if match:
@@ -162,9 +165,12 @@ class TenyksService(object):
 
 class FilterChain(object):
 
-    def __init__(self, filters, direct_only=False):
+    def __init__(self, filters, direct_only=False, private_only=False):
+        if direct_only and private_only:
+            warnings.warn('private_only implies direct_only')
         self.filters = filters
         self.direct_only = direct_only
+        self.private_only = private_only
         self.compiled_filters = []
 
     def _compile_filters(self):
