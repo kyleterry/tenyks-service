@@ -107,7 +107,8 @@ class TenyksService(object):
             if match or ignore:
                 self.delegate_to_handle_method(data, match, name)
         else:
-            gevent.spawn(self.handle, data, None, None)
+            if hasattr(self, 'handle'):
+                gevent.spawn(self.handle, data, None, None)
 
     def run_recurring(self):
         """
@@ -167,11 +168,8 @@ class TenyksService(object):
             callee = getattr(self, 'handle_{name}'.format(name=name))
             gevent.spawn(callee, data, match)
         else:
-            gevent.spawn(self.handle, data, match, name)
-
-    def handle(self, data, match, filter_name):
-        raise NotImplementedError('`handle` needs to be implemented on all '
-                                  'TenyksService subclasses.')
+            if hasattr(self, 'handle'):
+                gevent.spawn(self.handle, data, match, name)
 
     def _respond_to_ping(self, data):
         self.logger.debug("Responding to PING")
