@@ -34,10 +34,10 @@ class TenyksService(object):
         self._register_base_handlers()
 
     def _register_base_handlers(self):
-        self.handle_command('PING', self._respond_to_ping)
-        self.handle_command('HELLO', self._register)
-        self.handle_command('PRIVMSG', self._help_check)
-        self.handle_command('PRIVMSG', self._privmsg_handler)
+        self.add_command_handler('PING', self._respond_to_ping)
+        self.add_command_handler('HELLO', self._register)
+        self.add_command_handler('PRIVMSG', self._help_check)
+        self.add_command_handler('PRIVMSG', self._privmsg_handler)
 
     def hangup(self):
         self._hangup()
