@@ -29,7 +29,6 @@ class TenyksService(object):
                 self.irc_message_filters.values())
         if hasattr(self, 'recurring'):
             gevent.spawn(self.run_recurring)
-        self._register()
 
     def _register(self):
         self.logger.debug("Registering with bot")
@@ -84,6 +83,8 @@ class TenyksService(object):
         return all(map(lambda x: x in data.keys(), self.required_data_fields))
 
     def run(self):
+        # register when we come online
+        self._register()
         r = redis.Redis(**settings.REDIS_CONNECTION)
         pubsub = r.pubsub()
         pubsub.subscribe(self.channels)
@@ -98,6 +99,9 @@ class TenyksService(object):
                         gevent.spawn(self._respond_to_ping, data)
                         continue
                     if data["command"] == "HELLO":
+                        # reregister if tenyks goes away and then comes back
+                        # Tenyks will send a HELLO command if it reconnects or
+                        # conntects to the pubsub.
                         self.logger.debug("Got HELLO message; registering...")
                         self._register()
                         continue
