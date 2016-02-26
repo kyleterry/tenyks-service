@@ -18,6 +18,7 @@ class TenyksService(object):
     name = None
     version = '0.0'
     required_data_fields = ["command", "payload"]
+    command_handlers = {}
 
     def __init__(self, name, settings):
         self.channels = [settings.BROADCAST_SERVICE_CHANNEL]
@@ -29,6 +30,14 @@ class TenyksService(object):
                 self.irc_message_filters.values())
         if hasattr(self, 'recurring'):
             gevent.spawn(self.run_recurring)
+        self.command_handlers = {}
+        self._register_base_handlers()
+
+    def _register_base_handlers(self):
+        self.handle_command('PING', self._respond_to_ping)
+        self.handle_command('HELLO', self._register)
+        self.handle_command('PRIVMSG', self._help_check)
+        self.handle_command('PRIVMSG', self._privmsg_handler)
 
     def _register(self):
         self.logger.debug("Registering with bot")
@@ -65,14 +74,26 @@ class TenyksService(object):
         }
         self.send('', data)
 
-    def _help(self, data):
-        self.logger.debug("Sending help!")
-        data['target'] = data['nick']
-        if hasattr(self, "help_text"):
-            for line in self.help_text.split('\n'):
-                self.send(line, data)
+    def _help_check(self, data):
+        if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
+            self.logger.debug("Sending help!")
+            data['target'] = data['nick']
+            if hasattr(self, "help_text"):
+                for line in self.help_text.split('\n'):
+                    self.send(line, data)
+            else:
+                self.send('No help.', data)
+
+    def _privmsg_handler(self, data):
+        if self.irc_message_filters and 'payload' in data:
+            self.logger.debug('Handling PRIVMSG')
+            name, match = self.search_for_match(data)
+            ignore = (hasattr(self, 'pass_on_non_match')
+                        and self.pass_on_non_match)
+            if match or ignore:
+                self.delegate_to_handle_method(data, match, name)
         else:
-            self.send('No help.', data)
+            gevent.spawn(self.handle, data, None, None)
 
     def run_recurring(self):
         """
@@ -89,6 +110,19 @@ class TenyksService(object):
     def data_is_valid(self, data):
         return all(map(lambda x: x in data.keys(), self.required_data_fields))
 
+    def add_command_handler(self, command, handlefunc):
+        if command in self.command_handlers:
+            self.command_handlers[command].append(handlefunc)
+        else:
+            self.command_handlers[command] = [handlefunc]
+
+    def _delegate(self, data):
+        if data['command'].upper() not in self.command_handlers:
+            self.logger.error('Nothing registered to handle {}'.format(data['command']))
+            return
+        for handler in self.command_handlers[data['command'].upper()]:
+            gevent.spawn(handler, data)
+
     def run(self):
         # register when we come online
         gevent.spawn(self._register)
@@ -99,30 +133,9 @@ class TenyksService(object):
             if raw_redis_message['data'] != 1L:
                 data = json.loads(raw_redis_message['data'])
                 if not self.data_is_valid(data):
-                    self.logger.error('data payload is invalid: {}'.format(data))
+                    self.logger.error('data message is invalid: {}'.format(data))
                     continue
-                if data["command"] == "PING":
-                    self.logger.debug("Got PING message; PONGing...")
-                    gevent.spawn(self._respond_to_ping, data)
-                    continue
-                if data["command"] == "HELLO":
-                    # reregister if tenyks goes away and then comes back
-                    # Tenyks will send a HELLO command if it reconnects or
-                    # conntects to the pubsub.
-                    self.logger.debug("Got HELLO message; registering...")
-                    gevent.spawn(self._register)
-                    continue
-                if self.irc_message_filters and 'payload' in data:
-                    if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
-                        self._help(data)
-                        continue
-                    name, match = self.search_for_match(data)
-                    ignore = (hasattr(self, 'pass_on_non_match')
-                                and self.pass_on_non_match)
-                    if match or ignore:
-                        self.delegate_to_handle_method(data, match, name)
-                else:
-                    gevent.spawn(self.handle, data, None, None)
+                self._delegate(data)
 
     def search_for_match(self, data):
         for name, filter_chain in self.irc_message_filters.iteritems():
