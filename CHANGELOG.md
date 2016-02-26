@@ -13,3 +13,6 @@ your `def handler(...): pass` methods :^).
   functionality without worrying about breaking a nasty if/else structure.
 * General clean up and annotations.
 * Python 3 support :^).
+* New API method! You can attach your own handlers to the command system by
+  calling `self.add_command_handler('COMMANDNAME', self.my_command_handler)`.
+  `self.my_command_handler` should take `data` as an arg.
