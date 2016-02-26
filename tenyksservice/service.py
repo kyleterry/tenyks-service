@@ -96,36 +96,33 @@ class TenyksService(object):
         pubsub = r.pubsub()
         pubsub.subscribe(self.channels)
         for raw_redis_message in pubsub.listen():
-            try:
-                if raw_redis_message['data'] != 1L:
-                    data = json.loads(raw_redis_message['data'])
-                    if not self.data_is_valid(data):
-                        logging.error('data payload is invalid: {}'.format(data))
+            if raw_redis_message['data'] != 1L:
+                data = json.loads(raw_redis_message['data'])
+                if not self.data_is_valid(data):
+                    self.logger.error('data payload is invalid: {}'.format(data))
+                    continue
+                if data["command"] == "PING":
+                    self.logger.debug("Got PING message; PONGing...")
+                    gevent.spawn(self._respond_to_ping, data)
+                    continue
+                if data["command"] == "HELLO":
+                    # reregister if tenyks goes away and then comes back
+                    # Tenyks will send a HELLO command if it reconnects or
+                    # conntects to the pubsub.
+                    self.logger.debug("Got HELLO message; registering...")
+                    gevent.spawn(self._register)
+                    continue
+                if self.irc_message_filters and 'payload' in data:
+                    if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
+                        self._help(data)
                         continue
-                    if data["command"] == "PING":
-                        self.logger.debug("Got PING message; PONGing...")
-                        gevent.spawn(self._respond_to_ping, data)
-                        continue
-                    if data["command"] == "HELLO":
-                        # reregister if tenyks goes away and then comes back
-                        # Tenyks will send a HELLO command if it reconnects or
-                        # conntects to the pubsub.
-                        self.logger.debug("Got HELLO message; registering...")
-                        gevent.spawn(self._register)
-                        continue
-                    if self.irc_message_filters and 'payload' in data:
-                        if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
-                            self._help(data)
-                            continue
-                        name, match = self.search_for_match(data)
-                        ignore = (hasattr(self, 'pass_on_non_match')
-                                  and self.pass_on_non_match)
-                        if match or ignore:
-                            self.delegate_to_handle_method(data, match, name)
-                    else:
-                        gevent.spawn(self.handle, data, None, None)
-            except ValueError:
-                self.logger.info('Invalid JSON. Ignoring message.')
+                    name, match = self.search_for_match(data)
+                    ignore = (hasattr(self, 'pass_on_non_match')
+                                and self.pass_on_non_match)
+                    if match or ignore:
+                        self.delegate_to_handle_method(data, match, name)
+                else:
+                    gevent.spawn(self.handle, data, None, None)
 
     def search_for_match(self, data):
         for name, filter_chain in self.irc_message_filters.iteritems():
