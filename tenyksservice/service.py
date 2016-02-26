@@ -75,6 +75,13 @@ class TenyksService(object):
             self.send('No help.', data)
 
     def run_recurring(self):
+        """
+        If you define a method on the service called `recurring`, it will run
+        for `self.recurring_delay` or 30 seconds. This can be used, as an
+        example, to fetch and cache weather data every so often so if a bunch
+        of people in a channel ask for weather a lot, it won't count against
+        your monthly API hits.
+        """
         self.recurring()
         recurring_delay = getattr(self, 'recurring_delay', 30)
         gevent.spawn_later(recurring_delay, self.run_recurring)
