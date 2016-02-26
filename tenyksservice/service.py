@@ -100,7 +100,8 @@ class TenyksService(object):
                 if raw_redis_message['data'] != 1L:
                     data = json.loads(raw_redis_message['data'])
                     if not self.data_is_valid(data):
-                        raise ValueError
+                        logging.error('data payload is invalid: {}'.format(data))
+                        continue
                     if data["command"] == "PING":
                         self.logger.debug("Got PING message; PONGing...")
                         gevent.spawn(self._respond_to_ping, data)
