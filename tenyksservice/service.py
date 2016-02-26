@@ -91,7 +91,7 @@ class TenyksService(object):
 
     def run(self):
         # register when we come online
-        self._register()
+        gevent.spawn(self._register)
         r = redis.Redis(**settings.REDIS_CONNECTION)
         pubsub = r.pubsub()
         pubsub.subscribe(self.channels)
@@ -111,7 +111,7 @@ class TenyksService(object):
                         # Tenyks will send a HELLO command if it reconnects or
                         # conntects to the pubsub.
                         self.logger.debug("Got HELLO message; registering...")
-                        self._register()
+                        gevent.spawn(self._register)
                         continue
                     if self.irc_message_filters and 'payload' in data:
                         if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
