@@ -29,8 +29,6 @@ setup(name='tenyksservice',
         'redis',
         'nose',
         'unittest2',
-        'clint',
-        'peewee',
         'jinja2',
     ],
     entry_points={

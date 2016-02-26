@@ -2,13 +2,12 @@ import gevent.monkey
 gevent.monkey.patch_all()
 
 import json
+import logging
 import re
+import warnings
 
 import gevent
 import redis
-
-import logging
-import warnings
 
 from .config import settings, collect_settings
 
