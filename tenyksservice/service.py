@@ -39,22 +39,6 @@ class TenyksService(object):
         self.handle_command('PRIVMSG', self._help_check)
         self.handle_command('PRIVMSG', self._privmsg_handler)
 
-    def _register(self):
-        self.logger.debug("Registering with bot")
-        data = {
-            "command": "REGISTER",
-            "payload": "",
-            "target": "",
-            "connection": "",
-            "meta": {
-                "name": self.name,
-                "version": self.version,
-                "UUID": self.settings.SERVICE_UUID,
-                "description": self.settings.SERVICE_DESCRIPTION
-            }
-        }
-        self.send('', data)
-
     def hangup(self):
         self._hangup()
 
@@ -74,7 +58,31 @@ class TenyksService(object):
         }
         self.send('', data)
 
+    def _register(self, data=None):
+        """
+        Register handler. This is called at the beginning of `run` and when
+        a HELLO command is recieved.
+        """
+        self.logger.debug("Registering with bot")
+        data = {
+            "command": "REGISTER",
+            "payload": "",
+            "target": "",
+            "connection": "",
+            "meta": {
+                "name": self.name,
+                "version": self.version,
+                "UUID": self.settings.SERVICE_UUID,
+                "description": self.settings.SERVICE_DESCRIPTION
+            }
+        }
+        self.send('', data)
+
     def _help_check(self, data):
+        """
+        Help handler. This is triggered when a PRIVMSG command is received and
+        returns help text if the payload is !help and matches the service meta.
+        """
         if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
             self.logger.debug("Sending help!")
             data['target'] = data['nick']
@@ -85,6 +93,12 @@ class TenyksService(object):
                 self.send('No help.', data)
 
     def _privmsg_handler(self, data):
+        """
+        PRIVMSG handler. This is triggered when a PRIVMSG command is received
+        and it looks for a match within the irc_message_filters list of
+        compiled regular expressions. If a match is found, it will call the
+        matching handler function, otherwise it will just call `self.handler`.
+        """
         if self.irc_message_filters and 'payload' in data:
             self.logger.debug('Handling PRIVMSG')
             name, match = self.search_for_match(data)
