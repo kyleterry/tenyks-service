@@ -145,12 +145,14 @@ class TenyksService(object):
         pubsub = r.pubsub()
         pubsub.subscribe(self.channels)
         for raw_redis_message in pubsub.listen():
-            if raw_redis_message['data'] != 1L:
+            try:
                 data = json.loads(raw_redis_message['data'])
                 if not self.data_is_valid(data):
-                    self.logger.error('data message is invalid: {}'.format(data))
+                    self.logger.error('message is invalid: {}'.format(data))
                     continue
                 self._delegate(data)
+            except json.JSONDecodeError as e:
+                self.logger.error(e)
 
     def search_for_match(self, data):
         for name, filter_chain in self.irc_message_filters.iteritems():
