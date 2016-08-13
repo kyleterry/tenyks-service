@@ -28,9 +28,9 @@ setup(name='tenyksservice',
       zip_safe=False,
       test_suite='tests',
       install_requires=[
-          'gevent',
           'jinja2',
-          'pyzmq'
+          'pyzmq',
+          'aiozmq'
       ],
       entry_points={
           'console_scripts': [

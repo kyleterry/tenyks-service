@@ -1,55 +1,55 @@
-import gevent.monkey
-gevent.monkey.patch_all()
-
+import asyncio
 import json
 import logging
 import re
 import warnings
 
-import gevent
+import aiozmq
 import zmq
 
 from .config import settings, collect_settings
 from .packages import six
 
 
-class TenyksService(object):
+class TenyksService:
 
     irc_message_filters = {}
     name = None
+    logger = None
     version = '0.0'
     required_data_fields = ["command", "payload"]
     command_handlers = {}
 
     def __init__(self, name, settings):
-        self.settings = settings
         self.name = name.lower().replace(' ', '')
+        self.settings = settings
+        self.loop = asyncio.get_event_loop()
+        print(self.settings.DEBUG)
+        if self.settings.DEBUG:
+            logging.basicConfig(level=logging.DEBUG)
+        else:
+            logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(self.name)
         for f in self.irc_message_filters.values():
             f._compile_filters()
-        if hasattr(self, 'recurring'):
-            gevent.spawn(self.run_recurring)
-            gevent.sleep(0)
         self.command_handlers = {}
-        self._register_base_handlers()
 
+    async def _zmq_connect(self):
         # setup zmq context
         self.logger.debug('Bootstrapping pubsub')
-        self._context = zmq.Context()
-        self._in = self._context.socket(zmq.SUB)
-        self._out = self._context.socket(zmq.PUB)
-        self._in.connect(settings.ZMQ_CONNECTION['in'])
-        self._in.setsockopt(zmq.SUBSCRIBE, b'')
-        self._out.connect(settings.ZMQ_CONNECTION['out'])
+        in_addr = self.settings.ZMQ_CONNECTION['in']
+        out_addr = self.settings.ZMQ_CONNECTION['out']
+        self._in = await aiozmq.create_zmq_stream(zmq.SUB,
+                                                  connect=in_addr,
+                                                  loop=self.loop)
+        self._out = await aiozmq.create_zmq_stream(zmq.PUB,
+                                                   connect=out_addr,
+                                                   loop=self.loop)
+        self._in.transport.setsockopt(zmq.SUBSCRIBE, b'')
+        await asyncio.sleep(0.5)
 
-    def _register_base_handlers(self):
-        self.add_command_handler('PING', self._respond_to_ping)
-        self.add_command_handler('HELLO', self._register)
-        self.add_command_handler('PRIVMSG', self._help_check)
-        self.add_command_handler('PRIVMSG', self._privmsg_handler)
-
-    def hangup(self):
-        self.logger.debug("Hanging up with bot")
+    async def hangup(self):
+        self.logger.debug("Hanging up with bot.")
         data = {
             "command": "BYE",
             "payload": "",
@@ -63,8 +63,12 @@ class TenyksService(object):
             }
         }
         self.send('', data)
+        await asyncio.sleep(0.5)
+        self._in.close()
+        self._out.close()
+        self.logger.debug("Hung up.")
 
-    def _register(self, data=None):
+    async def _register(self, data=None):
         """
         Register handler. This is called at the beginning of `run` and when
         a HELLO command is recieved.
@@ -84,7 +88,7 @@ class TenyksService(object):
         }
         self.send('', data)
 
-    def _help_check(self, data):
+    async def _help_check(self, data):
         """
         Help handler. This is triggered when a PRIVMSG command is received and
         returns help text if the payload is !help and matches the service meta.
@@ -98,7 +102,7 @@ class TenyksService(object):
             else:
                 self.send('No help.', data)
 
-    def _privmsg_handler(self, data):
+    async def _privmsg_handler(self, data):
         """
         PRIVMSG handler. This is triggered when a PRIVMSG command is received
         and it looks for a match within the irc_message_filters list of
@@ -107,17 +111,16 @@ class TenyksService(object):
         """
         if self.irc_message_filters and 'payload' in data:
             self.logger.debug('Handling PRIVMSG')
-            name, match = self.search_for_match(data)
-            ignore = (hasattr(self, 'pass_on_non_match')
-                        and self.pass_on_non_match)
+            name, match = await self.search_for_match(data)
+            ignore = (hasattr(self, 'pass_on_non_match') and
+                      self.pass_on_non_match)
             if match or not ignore:
-                self.delegate_to_handle_method(data, match, name)
+                await self.delegate_to_handle_method(data, match, name)
         else:
             if hasattr(self, 'handle'):
-                gevent.spawn(self.handle, data, None, None)
-                gevent.sleep(0)
+                await self.handle(data, None, None)
 
-    def run_recurring(self):
+    async def run_recurring(self):
         """
         If you define a method on the service called `recurring`, it will run
         for `self.recurring_delay` or 30 seconds. This can be used, as an
@@ -127,8 +130,8 @@ class TenyksService(object):
         """
         self.recurring()
         recurring_delay = getattr(self, 'recurring_delay', 30)
-        gevent.spawn_later(recurring_delay, self.run_recurring)
-        gevent.sleep(0)
+        await asyncio.sleep(recurring_delay)
+        await self.run_recurring()
 
     def data_is_valid(self, data):
         return all(map(lambda x: x in data.keys(), self.required_data_fields))
@@ -139,32 +142,44 @@ class TenyksService(object):
         else:
             self.command_handlers[command] = [handlefunc]
 
-    def _delegate(self, data):
+    async def _delegate(self, data):
         if data['command'].upper() not in self.command_handlers:
-            self.logger.error('Nothing registered to handle {}'.format(data['command']))
+            self.logger.error('Nothing registered to handle {}'
+                              .format(data['command']))
             return
         for handler in self.command_handlers[data['command'].upper()]:
             self.logger.debug('delegating message to {}'.format(handler))
-            #handler(data)
-            gevent.spawn(handler, data)
-            gevent.sleep(0)
+            await handler(data)
 
-    def run(self):
-        # register when we come online
-        gevent.spawn(self._register)
-        gevent.sleep(0)
+    async def run(self):
+        # Connect to ZMQ
+        await self._zmq_connect()
+
+        # Register with tenyks when we come online.
+        await self._register()
+
+        # Register base handlers
+        self.add_command_handler('PING', self._respond_to_ping)
+        self.add_command_handler('HELLO', self._register)
+        self.add_command_handler('PRIVMSG', self._help_check)
+        self.add_command_handler('PRIVMSG', self._privmsg_handler)
+
+        if hasattr(self, 'recurring'):
+            self.loop.create_task(self.run_recurring())
 
         self.logger.debug('before while loop')
         while True:
             self.logger.debug('after while loop')
-            data = self._in.recv_json()
-            self.logger.debug('got {}'.format(data))
-            if not self.data_is_valid(data):
-                self.logger.error('message is invalid: {}'.format(data))
-                continue
-            self._delegate(data)
+            data = await self._in.read()
+            jdata = json.loads(data[0].decode('utf-8'))
 
-    def search_for_match(self, data):
+            self.logger.debug('got {}'.format(jdata))
+            if not self.data_is_valid(jdata):
+                self.logger.error('message is invalid: {}'.format(jdata))
+                continue
+            await self._delegate(jdata)
+
+    async def search_for_match(self, data):
         for name, filter_chain in six.iteritems(self.irc_message_filters):
             if filter_chain.direct_only and not data.get('direct', False):
                 continue
@@ -175,17 +190,15 @@ class TenyksService(object):
                 return name, match
         return None, None
 
-    def delegate_to_handle_method(self, data, match, name):
+    async def delegate_to_handle_method(self, data, match, name):
         if hasattr(self, 'handle_{name}'.format(name=name)):
             callee = getattr(self, 'handle_{name}'.format(name=name))
-            gevent.spawn(callee, data, match)
-            gevent.sleep(0)
+            callee(data, match)
         else:
             if hasattr(self, 'handle'):
-                gevent.spawn(self.handle, data, match, name)
-                gevent.sleep(0)
+                await self.handle(data, match, name)
 
-    def _respond_to_ping(self, data):
+    async def _respond_to_ping(self, data):
         self.logger.debug("Responding to PING")
         data["command"] = "PONG"
         data["connection"] = ""
@@ -206,7 +219,8 @@ class TenyksService(object):
                     'description': self.settings.SERVICE_DESCRIPTION
                 }
             })
-        self._out.send_string(to_publish)
+        self._out.write([to_publish.encode('utf-8')])
+        self.loop.create_task(self._out.drain())
 
 
 class FilterChain(object):
@@ -223,8 +237,7 @@ class FilterChain(object):
         if self.filters:
             for f in self.filters:
                 if isinstance(f, six.string_types):
-                    self.compiled_filters.append(
-                        re.compile(f).match)
+                    self.compiled_filters.append(re.compile(f).match)
                 else:
                     self.compiled_filters.append(f)  # already compiled filters
 
@@ -239,12 +252,14 @@ class FilterChain(object):
 
 def run_service(service_class):
     errors = collect_settings()
+    loop = asyncio.get_event_loop()
     service_instance = service_class(settings.SERVICE_NAME, settings)
     for error in errors:
         service_instance.logger.error(error)
     try:
-        service_instance.run()
+        loop.run_until_complete(service_instance.run())
     except KeyboardInterrupt:
-        service_instance.hangup()
-        logger = logging.getLogger(service_instance.name)
-        logger.info('exiting')
+        pass
+    finally:
+        loop.run_until_complete(service_instance.hangup())
+    loop.close()
