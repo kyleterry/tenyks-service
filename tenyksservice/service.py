@@ -1,49 +1,55 @@
-import gevent.monkey
-gevent.monkey.patch_all()
-
+import asyncio
 import json
 import logging
 import re
 import warnings
 
-import gevent
-import redis
+import aiozmq
+import zmq
 
 from .config import settings, collect_settings
+from .packages import six
 
 
-class TenyksService(object):
+class TenyksService:
 
     irc_message_filters = {}
     name = None
+    logger = None
     version = '0.0'
     required_data_fields = ["command", "payload"]
     command_handlers = {}
 
     def __init__(self, name, settings):
-        self.channels = [settings.BROADCAST_SERVICE_CHANNEL]
-        self.settings = settings
         self.name = name.lower().replace(' ', '')
+        self.settings = settings
+        self.loop = asyncio.get_event_loop()
+        print(self.settings.DEBUG)
+        if self.settings.DEBUG:
+            logging.basicConfig(level=logging.DEBUG)
+        else:
+            logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(self.name)
-        if self.irc_message_filters:
-            map(lambda f: f._compile_filters(),
-                self.irc_message_filters.values())
-        if hasattr(self, 'recurring'):
-            gevent.spawn(self.run_recurring)
+        for f in self.irc_message_filters.values():
+            f._compile_filters()
         self.command_handlers = {}
-        self._register_base_handlers()
 
-    def _register_base_handlers(self):
-        self.add_command_handler('PING', self._respond_to_ping)
-        self.add_command_handler('HELLO', self._register)
-        self.add_command_handler('PRIVMSG', self._help_check)
-        self.add_command_handler('PRIVMSG', self._privmsg_handler)
+    async def _zmq_connect(self):
+        # setup zmq context
+        self.logger.debug('Bootstrapping pubsub')
+        in_addr = self.settings.ZMQ_CONNECTION['in']
+        out_addr = self.settings.ZMQ_CONNECTION['out']
+        self._in = await aiozmq.create_zmq_stream(zmq.SUB,
+                                                  connect=in_addr,
+                                                  loop=self.loop)
+        self._out = await aiozmq.create_zmq_stream(zmq.PUB,
+                                                   connect=out_addr,
+                                                   loop=self.loop)
+        self._in.transport.setsockopt(zmq.SUBSCRIBE, b'')
+        await asyncio.sleep(0.5)
 
-    def hangup(self):
-        self._hangup()
-
-    def _hangup(self):
-        self.logger.debug("Hanging up with bot")
+    async def hangup(self):
+        self.logger.debug("Hanging up with bot.")
         data = {
             "command": "BYE",
             "payload": "",
@@ -57,8 +63,12 @@ class TenyksService(object):
             }
         }
         self.send('', data)
+        await asyncio.sleep(0.5)
+        self._in.close()
+        self._out.close()
+        self.logger.debug("Hung up.")
 
-    def _register(self, data=None):
+    async def _register(self, data=None):
         """
         Register handler. This is called at the beginning of `run` and when
         a HELLO command is recieved.
@@ -78,7 +88,7 @@ class TenyksService(object):
         }
         self.send('', data)
 
-    def _help_check(self, data):
+    async def _help_check(self, data):
         """
         Help handler. This is triggered when a PRIVMSG command is received and
         returns help text if the payload is !help and matches the service meta.
@@ -92,7 +102,7 @@ class TenyksService(object):
             else:
                 self.send('No help.', data)
 
-    def _privmsg_handler(self, data):
+    async def _privmsg_handler(self, data):
         """
         PRIVMSG handler. This is triggered when a PRIVMSG command is received
         and it looks for a match within the irc_message_filters list of
@@ -101,16 +111,16 @@ class TenyksService(object):
         """
         if self.irc_message_filters and 'payload' in data:
             self.logger.debug('Handling PRIVMSG')
-            name, match = self.search_for_match(data)
-            ignore = (hasattr(self, 'pass_on_non_match')
-                        and self.pass_on_non_match)
-            if match or ignore:
-                self.delegate_to_handle_method(data, match, name)
+            name, match = await self.search_for_match(data)
+            ignore = (hasattr(self, 'pass_on_non_match') and
+                      self.pass_on_non_match)
+            if match or not ignore:
+                await self.delegate_to_handle_method(data, match, name)
         else:
             if hasattr(self, 'handle'):
-                gevent.spawn(self.handle, data, None, None)
+                await self.handle(data, None, None)
 
-    def run_recurring(self):
+    async def run_recurring(self):
         """
         If you define a method on the service called `recurring`, it will run
         for `self.recurring_delay` or 30 seconds. This can be used, as an
@@ -120,7 +130,8 @@ class TenyksService(object):
         """
         self.recurring()
         recurring_delay = getattr(self, 'recurring_delay', 30)
-        gevent.spawn_later(recurring_delay, self.run_recurring)
+        await asyncio.sleep(recurring_delay)
+        await self.run_recurring()
 
     def data_is_valid(self, data):
         return all(map(lambda x: x in data.keys(), self.required_data_fields))
@@ -131,31 +142,45 @@ class TenyksService(object):
         else:
             self.command_handlers[command] = [handlefunc]
 
-    def _delegate(self, data):
+    async def _delegate(self, data):
         if data['command'].upper() not in self.command_handlers:
-            self.logger.error('Nothing registered to handle {}'.format(data['command']))
+            self.logger.error('Nothing registered to handle {}'
+                              .format(data['command']))
             return
         for handler in self.command_handlers[data['command'].upper()]:
-            gevent.spawn(handler, data)
+            self.logger.debug('delegating message to {}'.format(handler))
+            await handler(data)
 
-    def run(self):
-        # register when we come online
-        gevent.spawn(self._register)
-        r = redis.Redis(**settings.REDIS_CONNECTION)
-        pubsub = r.pubsub()
-        pubsub.subscribe(self.channels)
-        for raw_redis_message in pubsub.listen():
-            try:
-                data = json.loads(raw_redis_message['data'])
-                if not self.data_is_valid(data):
-                    self.logger.error('message is invalid: {}'.format(data))
-                    continue
-                self._delegate(data)
-            except json.JSONDecodeError as e:
-                self.logger.error(e)
+    async def run(self):
+        # Connect to ZMQ
+        await self._zmq_connect()
 
-    def search_for_match(self, data):
-        for name, filter_chain in self.irc_message_filters.iteritems():
+        # Register with tenyks when we come online.
+        await self._register()
+
+        # Register base handlers
+        self.add_command_handler('PING', self._respond_to_ping)
+        self.add_command_handler('HELLO', self._register)
+        self.add_command_handler('PRIVMSG', self._help_check)
+        self.add_command_handler('PRIVMSG', self._privmsg_handler)
+
+        if hasattr(self, 'recurring'):
+            self.loop.create_task(self.run_recurring())
+
+        self.logger.debug('before while loop')
+        while True:
+            self.logger.debug('after while loop')
+            data = await self._in.read()
+            jdata = json.loads(data[0].decode('utf-8'))
+
+            self.logger.debug('got {}'.format(jdata))
+            if not self.data_is_valid(jdata):
+                self.logger.error('message is invalid: {}'.format(jdata))
+                continue
+            await self._delegate(jdata)
+
+    async def search_for_match(self, data):
+        for name, filter_chain in six.iteritems(self.irc_message_filters):
             if filter_chain.direct_only and not data.get('direct', False):
                 continue
             if filter_chain.private_only and data.get('from_channel', True):
@@ -165,24 +190,23 @@ class TenyksService(object):
                 return name, match
         return None, None
 
-    def delegate_to_handle_method(self, data, match, name):
+    async def delegate_to_handle_method(self, data, match, name):
         if hasattr(self, 'handle_{name}'.format(name=name)):
             callee = getattr(self, 'handle_{name}'.format(name=name))
-            gevent.spawn(callee, data, match)
+            callee(data, match)
         else:
             if hasattr(self, 'handle'):
-                gevent.spawn(self.handle, data, match, name)
+                await self.handle(data, match, name)
 
-    def _respond_to_ping(self, data):
+    async def _respond_to_ping(self, data):
         self.logger.debug("Responding to PING")
         data["command"] = "PONG"
         data["connection"] = ""
         self.send("", data)
 
     def send(self, message, data=None):
-        r = redis.Redis(**settings.REDIS_CONNECTION)
-        broadcast_channel = settings.BROADCAST_ROBOT_CHANNEL
         if data:
+            self.logger.debug('sending {}'.format(data))
             to_publish = json.dumps({
                 'command': data['command'],
                 'payload': message,
@@ -195,7 +219,8 @@ class TenyksService(object):
                     'description': self.settings.SERVICE_DESCRIPTION
                 }
             })
-        r.publish(broadcast_channel, to_publish)
+        self._out.write([to_publish.encode('utf-8')])
+        self.loop.create_task(self._out.drain())
 
 
 class FilterChain(object):
@@ -211,9 +236,8 @@ class FilterChain(object):
     def _compile_filters(self):
         if self.filters:
             for f in self.filters:
-                if isinstance(f, str) or isinstance(f, unicode):
-                    self.compiled_filters.append(
-                        re.compile(f).match)
+                if isinstance(f, six.string_types):
+                    self.compiled_filters.append(re.compile(f).match)
                 else:
                     self.compiled_filters.append(f)  # already compiled filters
 
@@ -228,12 +252,14 @@ class FilterChain(object):
 
 def run_service(service_class):
     errors = collect_settings()
+    loop = asyncio.get_event_loop()
     service_instance = service_class(settings.SERVICE_NAME, settings)
     for error in errors:
         service_instance.logger.error(error)
     try:
-        service_instance.run()
+        loop.run_until_complete(service_instance.run())
     except KeyboardInterrupt:
-        service_instance.hangup()
-        logger = logging.getLogger(service_instance.name)
-        logger.info('exiting')
+        pass
+    finally:
+        loop.run_until_complete(service_instance.hangup())
+    loop.close()

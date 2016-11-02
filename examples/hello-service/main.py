@@ -3,7 +3,7 @@ from tenyksservice import TenyksService, run_service, FilterChain
 
 class Hello(TenyksService):
     irc_message_filters = {
-        'hello': FilterChain([r"^(?i)(hi|hello|sup|hey), I'm (?P<name>(.*))$"],
+        'hello': FilterChain([r"^(hi|hello|sup|hey), I'm (?P<name>(.*))$"],
                              direct_only=True),
         'no_direct': FilterChain([r'^non direct match$', ], direct_only=False),
         'private': FilterChain([r'^this is private$', ], private_only=True),

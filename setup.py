@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 from setuptools import setup
 
-version = '1.9'
+version = '2.0-dev'
 
 packages = [
     'tenyksservice',
+    'tenyksservice.packages',
 ]
 
 with open('./README.md') as f:
@@ -12,10 +13,10 @@ with open('./README.md') as f:
 
 setup(name='tenyksservice',
       version=version,
-      description="Tenyks service class for making fun things",
+      description="Tenyks service class for making fun things for Tenyks.",
       long_description=long_description,
       classifiers=[], # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
-      keywords='irc bot redis service',
+      keywords='irc bot zeromq service',
       author='Kyle Terry',
       author_email='kyle@kyleterry.com',
       url='https://github.com/kyleterry/tenyks-service',
@@ -27,11 +28,9 @@ setup(name='tenyksservice',
       zip_safe=False,
       test_suite='tests',
       install_requires=[
-          'gevent',
-          'redis',
-          'nose',
-          'unittest2',
           'jinja2',
+          'pyzmq',
+          'aiozmq'
       ],
       entry_points={
           'console_scripts': [

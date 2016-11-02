@@ -4,14 +4,23 @@ from os.path import abspath, join, dirname
 import uuid
 import sys
 import logging.config
+import logging
 from logging.handlers import SysLogHandler
 
 from jinja2 import Template
 
-from tenyksservice.module_loader import make_module_from_file
+from .module_loader import make_module_from_file
+from .packages.termcolor import colored
 
 
 SERVICE_ROOT = abspath(dirname(__file__))
+COLORS = {
+    'DEBUG': 'white',
+    'INFO': 'green',
+    'WARNING': 'yellow',
+    'CRITICAL': 'red',
+    'ERROR': 'white',
+}
 
 
 class NotConfigured(Exception):
@@ -61,6 +70,18 @@ class Settings(object):
 
 
 settings = Settings()
+
+
+class ColorFormatter(logging.Formatter):
+
+    def format(self, record):
+        if record.levelname in COLORS:
+            color = COLORS[record.levelname]
+            record.msg = colored(record.msg, color)
+        if record.levelname == 'INFO':
+            if 'success' in record.msg or 'OK' in record.msg:
+                record.msg = colored(record.msg, 'green')
+        return super(ColorFormatter, self).format(record)
 
 def collect_settings(settings_path=None, service_name=None):
     errors = []
@@ -128,7 +149,7 @@ Use `tenyks-service-mkconfig servicename > /path/to/settings.py`
             'disable_existing_loggers': True,
             'formatters': {
                 'color': {
-                    'class': 'tenyks.logs.ColorFormatter',
+                    'class': 'tenyksservice.config.ColorFormatter',
                     'format': '%(asctime)s %(name)s:%(levelname)s %(message)s'
                 },
                 'default': {
