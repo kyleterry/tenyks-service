@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 from setuptools import setup
 
-version = '2.1-dev'
+version = '2.1.5'
 
 packages = [
     'tenyksservice',
     'tenyksservice.packages',
 ]
 
-with open('./README.md') as f:
+with open('README.md') as f:
     long_description = f.read()
 
 setup(name='tenyksservice',
@@ -23,7 +23,7 @@ setup(name='tenyksservice',
       license='LICENSE',
       packages=packages,
       package_dir={'tenyksservice': 'tenyksservice'},
-      package_data={'tenyksservice': ['settings.py.dist']},
+      package_data={'': ['README.md', 'LICENSE'], 'tenyksservice': ['settings.py.dist']},
       include_package_data=True,
       zip_safe=False,
       test_suite='tests',

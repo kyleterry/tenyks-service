@@ -118,7 +118,7 @@ class TenyksService:
                 await self.delegate_to_handle_method(data, match, name)
         else:
             if hasattr(self, 'handle'):
-                await self.handle(data, None, None)
+                self.handle(data, None, None)
 
     async def run_recurring(self):
         """
@@ -196,7 +196,7 @@ class TenyksService:
             callee(data, match)
         else:
             if hasattr(self, 'handle'):
-                await self.handle(data, match, name)
+                self.handle(data, match, name)
 
     async def _respond_to_ping(self, data):
         self.logger.debug("Responding to PING")
