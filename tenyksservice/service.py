@@ -8,6 +8,8 @@ import aiozmq
 import zmq
 
 from .config import settings, collect_settings
+from .context import ExpirableContext, default_expirable_context_timeout
+from .filters import FilterChain, RegexpFilterChain
 from .packages import six
 
 
@@ -17,18 +19,15 @@ class TenyksService:
     name = None
     logger = None
     version = '0.0'
-    required_data_fields = ["command", "payload"]
     command_handlers = {}
+    conversation_context = {}
+
+    _required_data_fields = ['command', 'payload']
 
     def __init__(self, name, settings):
         self.name = name.lower().replace(' ', '')
         self.settings = settings
         self.loop = asyncio.get_event_loop()
-        print(self.settings.DEBUG)
-        if self.settings.DEBUG:
-            logging.basicConfig(level=logging.DEBUG)
-        else:
-            logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(self.name)
         for f in self.irc_message_filters.values():
             f._compile_filters()
@@ -36,7 +35,6 @@ class TenyksService:
 
     async def _zmq_connect(self):
         # setup zmq context
-        self.logger.debug('Bootstrapping pubsub')
         in_addr = self.settings.ZMQ_CONNECTION['in']
         out_addr = self.settings.ZMQ_CONNECTION['out']
         self._in = await aiozmq.create_zmq_stream(zmq.SUB,
@@ -46,10 +44,11 @@ class TenyksService:
                                                    connect=out_addr,
                                                    loop=self.loop)
         self._in.transport.setsockopt(zmq.SUBSCRIBE, b'')
+        self.logger.debug('connected to pubsub sockets')
         await asyncio.sleep(0.5)
 
     async def hangup(self):
-        self.logger.debug("Hanging up with bot.")
+        self.logger.debug('hanging up')
         data = {
             "command": "BYE",
             "payload": "",
@@ -66,14 +65,15 @@ class TenyksService:
         await asyncio.sleep(0.5)
         self._in.close()
         self._out.close()
-        self.logger.debug("Hung up.")
+        self.logger.debug('closed pubsub sockets')
+        self.logger.info('service shutdown')
 
     async def _register(self, data=None):
         """
         Register handler. This is called at the beginning of `run` and when
         a HELLO command is recieved.
         """
-        self.logger.debug("Registering with bot")
+        self.logger.debug('registering with tenyks')
         data = {
             "command": "REGISTER",
             "payload": "",
@@ -94,13 +94,12 @@ class TenyksService:
         returns help text if the payload is !help and matches the service meta.
         """
         if data['payload'] == '!help {}'.format(self.settings.SERVICE_UUID):
-            self.logger.debug("Sending help!")
             data['target'] = data['nick']
             if hasattr(self, "help_text"):
                 for line in self.help_text.split('\n'):
                     self.send(line, data)
             else:
-                self.send('No help.', data)
+                self.send('no help.', data)
 
     async def _privmsg_handler(self, data):
         """
@@ -110,7 +109,7 @@ class TenyksService:
         matching handler function, otherwise it will just call `self.handler`.
         """
         if self.irc_message_filters and 'payload' in data:
-            self.logger.debug('Handling PRIVMSG')
+            self.logger.debug('handling PRIVMSG')
             name, match = await self.search_for_match(data)
             ignore = (hasattr(self, 'pass_on_non_match') and
                       self.pass_on_non_match)
@@ -120,21 +119,8 @@ class TenyksService:
             if hasattr(self, 'handle'):
                 self.handle(data, None, None)
 
-    async def run_recurring(self):
-        """
-        If you define a method on the service called `recurring`, it will run
-        for `self.recurring_delay` or 30 seconds. This can be used, as an
-        example, to fetch and cache weather data every so often so if a bunch
-        of people in a channel ask for weather a lot, it won't count against
-        your monthly API hits.
-        """
-        self.recurring()
-        recurring_delay = getattr(self, 'recurring_delay', 30)
-        await asyncio.sleep(recurring_delay)
-        await self.run_recurring()
-
     def data_is_valid(self, data):
-        return all(map(lambda x: x in data.keys(), self.required_data_fields))
+        return all(map(lambda x: x in data.keys(), self._required_data_fields))
 
     def add_command_handler(self, command, handlefunc):
         if command in self.command_handlers:
@@ -151,6 +137,31 @@ class TenyksService:
             self.logger.debug('delegating message to {}'.format(handler))
             await handler(data)
 
+    async def _run_recurring(self):
+        """
+        If you define a method on the service called `recurring`, it will run
+        for `self.recurring_delay` or 30 seconds. This can be used, as an
+        example, to fetch and cache weather data every so often so if a bunch
+        of people in a channel ask for weather a lot, it won't count against
+        your monthly API hits.
+        """
+        recurring_delay = getattr(self, 'recurring_delay', 30)
+
+        while True:
+            self.logger.debug('running periodic task')
+            self.recurring()
+            await asyncio.sleep(recurring_delay)
+
+    async def _run_context_reaper(self):
+        reaper_delay = getattr(self, 'reaper_delay', 2)
+
+        while True:
+            for key in list(self.conversation_context):
+                if self.conversation_context[key].is_expired:
+                    self.logger.debug('removing expired conversation context')
+                    self.conversation_context.pop(key, None)
+            await asyncio.sleep(reaper_delay)
+
     async def run(self):
         # Connect to ZMQ
         await self._zmq_connect()
@@ -165,15 +176,16 @@ class TenyksService:
         self.add_command_handler('PRIVMSG', self._privmsg_handler)
 
         if hasattr(self, 'recurring'):
-            self.loop.create_task(self.run_recurring())
+            self._run_recurring_task = self.loop.create_task(self._run_recurring())
 
-        self.logger.debug('before while loop')
+        self._run_context_reaper_task = self.loop.create_task(self._run_context_reaper())
+
+        self.logger.info('starting service {}'.format(self.name))
         while True:
-            self.logger.debug('after while loop')
             data = await self._in.read()
             jdata = json.loads(data[0].decode('utf-8'))
 
-            self.logger.debug('got {}'.format(jdata))
+            self.logger.debug('received: {}'.format(jdata))
             if not self.data_is_valid(jdata):
                 self.logger.error('message is invalid: {}'.format(jdata))
                 continue
@@ -191,22 +203,48 @@ class TenyksService:
         return None, None
 
     async def delegate_to_handle_method(self, data, match, name):
-        if hasattr(self, 'handle_{name}'.format(name=name)):
-            callee = getattr(self, 'handle_{name}'.format(name=name))
+        handle_method = 'handle_{name}'.format(name=name)
+        if hasattr(self, handle_method):
+            self.logger.debug('calling handle method {}'.format(handle_method))
+            callee = getattr(self, handle_method)
             callee(data, match)
         else:
             if hasattr(self, 'handle'):
                 self.handle(data, match, name)
 
     async def _respond_to_ping(self, data):
-        self.logger.debug("Responding to PING")
-        data["command"] = "PONG"
-        data["connection"] = ""
-        self.send("", data)
+        data['command'] = 'PONG'
+        data["connection"] = ''
+        self.send('', data)
+
+    def _context_key_from_data(self, data):
+        return '{}:{}:{}'.format(
+                data['connection'],
+                data['target'],
+                data['nick'])
+
+    def set_expirable_context(self, data, timeout=default_expirable_context_timeout, **kwargs):
+        ctx = ExpirableContext(
+                data,
+                loop=self.loop,
+                timeout=timeout,
+                logger=self.logger)
+        return self.set_context(data, ctx, **kwargs)
+
+    def set_context(self, data, ctx, **kwargs):
+        self.conversation_context[self._context_key_from_data(data)] = ctx
+
+        for k, v in kwargs.items():
+            ctx[k] = v
+
+        return ctx
+
+    def get_context(self, data):
+        return self.conversation_context.get(self._context_key_from_data(data))
+
 
     def send(self, message, data=None):
         if data:
-            self.logger.debug('sending {}'.format(data))
             to_publish = json.dumps({
                 'command': data['command'],
                 'payload': message,
@@ -219,35 +257,9 @@ class TenyksService:
                     'description': self.settings.SERVICE_DESCRIPTION
                 }
             })
+        self.logger.debug('sending: {}'.format(to_publish))
         self._out.write([to_publish.encode('utf-8')])
         self.loop.create_task(self._out.drain())
-
-
-class FilterChain(object):
-
-    def __init__(self, filters, direct_only=False, private_only=False):
-        if direct_only and private_only:
-            warnings.warn('private_only implies direct_only')
-        self.filters = filters
-        self.direct_only = direct_only
-        self.private_only = private_only
-        self.compiled_filters = []
-
-    def _compile_filters(self):
-        if self.filters:
-            for f in self.filters:
-                if isinstance(f, six.string_types):
-                    self.compiled_filters.append(re.compile(f).match)
-                else:
-                    self.compiled_filters.append(f)  # already compiled filters
-
-    def attempt_match(self, message):
-        # tried to match message and returns the first one found or None
-        for f in self.compiled_filters:
-            match = f(message)
-            if match:
-                return match
-        return None
 
 
 def run_service(service_class):

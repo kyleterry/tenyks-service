@@ -1,6 +1,18 @@
 # Tenyks Service CHANGELOG (Python version)
 
-## 1.9 (NOT RELEASED; UNSTABLE)
+## 2.2.0
+
+* Adding support for conversation contexts. Currently one is included called
+  ExpirableContext that has a timeout option and will expire after timeout.
+* Fixed double logging issue.
+* Fixed a recursion problem with recurring tasks. Changed this from a tail call
+  recursive function to a while True: loop.
+* Deprecated FilterChain.
+* Added RegexpFilterChain that extends FilterChain currently. This allows for
+  more filter chain classes to be added in the future that do other things besides
+  match using regular expressions
+
+## 1.9
 
 No breaking changes. Everything should work the same. You can even remove all
 your `def handler(...): pass` methods :^).
