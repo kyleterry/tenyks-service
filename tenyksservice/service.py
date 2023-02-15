@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 import re
@@ -149,7 +150,10 @@ class TenyksService:
 
         while True:
             self.logger.debug('running periodic task')
-            self.recurring()
+            if inspect.iscoroutinefunction(self.recurring):
+                await self.recurring()
+            else:
+                self.recurring()
             await asyncio.sleep(recurring_delay)
 
     async def _run_context_reaper(self):
