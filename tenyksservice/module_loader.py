@@ -35,7 +35,7 @@ def make_module_from_file(module_name, module_filepath):
         file is created, and no entry is placed in `sys.modules`.
 
         """
-    py_source_open_mode = 'U'
+    py_source_open_mode = 'rt'
     py_source_description = (b".py", py_source_open_mode, imp.PY_SOURCE)
 
     with open(module_filepath, py_source_open_mode) as module_file:
